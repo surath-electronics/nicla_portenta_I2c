@@ -2,8 +2,10 @@
 #include <Wire.h>
 
 #define I2C_SLAVE_ADDRESS 0x08
-
 #define BUFFER_SIZE 8
+
+const uint32_t SAMPLE_INTERVAL_US = 3000;  // 333 Hz = 1/333s = 3000 µs
+uint32_t lastSampleTime = 0;
 
 // Sensor declarations
 SensorXYZ accel(SENSOR_ID_ACC);
@@ -11,6 +13,29 @@ SensorXYZ gyro(SENSOR_ID_GYRO);
 Sensor temp(SENSOR_ID_TEMP);
 Sensor baro(SENSOR_ID_BARO);
 Sensor hum(SENSOR_ID_HUM);
+
+struct SensorData {
+  uint32_t timestamp;
+  int16_t ax, ay, az;
+  int16_t gx, gy, gz;
+  float temp, baro, hum;
+};
+
+SensorData buffer[BUFFER_SIZE];
+volatile int writeIndex = 0;
+uint32_t seqCounter = 0;
+
+void sendI2CData() {
+  const uint8_t* ptr = (const uint8_t*)buffer;
+  size_t total = sizeof(buffer);
+
+  while (total > 0) {
+    size_t chunkSize = min(total, 32);  // Conservative 32-byte chunks
+    Wire.write(ptr, chunkSize);
+    ptr += chunkSize;
+    total -= chunkSize;
+  }
+}
 
 float computeODR(uint32_t currentTimestamp) {
   const int windowSize = 100;
@@ -33,17 +58,6 @@ float computeODR(uint32_t currentTimestamp) {
 
   return -1.0f;  // not ready yet
 }
-
-struct SensorData {
-  uint32_t seq;
-  int16_t ax, ay, az;
-  int16_t gx, gy, gz;
-  float temp, baro, hum;
-};
-
-SensorData buffer[BUFFER_SIZE];
-volatile int writeIndex = 0;
-uint32_t seqCounter = 0;
 
 void setup() {
   Serial.begin(1000000);
@@ -76,11 +90,12 @@ void loop() {
   static int16_t lastAx = 0;
   int16_t currentAx = accel.x();
 
-  if (currentAx != lastAx) {
-    lastAx = currentAx;
+  uint32_t now = micros();
+  if (now - lastSampleTime >= SAMPLE_INTERVAL_US) {
+    lastSampleTime = now;
 
     SensorData& s = buffer[writeIndex];
-    s.seq = seqCounter++;
+    s.timestamp = now;
     s.ax = accel.x();
     s.ay = accel.y();
     s.az = accel.z();
@@ -93,12 +108,12 @@ void loop() {
 
     writeIndex = (writeIndex + 1) % BUFFER_SIZE;
 
-    //Serial.print("Buffered Seq: ");
-    //Serial.println(buffer[writeIndex == 0 ? BUFFER_SIZE - 1 : writeIndex - 1].seq);
+    /* Debug print
+    Serial.print("Timestamp: ");
+    Serial.print(s.timestamp);
+    Serial.print(" µs | ");
 
-    // 🖨️ Debug print to Serial 
-    /*Serial.print("Seq: "); Serial.print(s.seq);
-    Serial.print(" | Accel: ");
+    Serial.print("Accel: ");
     Serial.print(s.ax); Serial.print(", ");
     Serial.print(s.ay); Serial.print(", ");
     Serial.print(s.az); Serial.print(" | ");
@@ -117,24 +132,11 @@ void loop() {
     Serial.print("Hum: ");
     Serial.println(s.hum);*/
 
-    uint32_t now = micros();
-    float odr = computeODR(now);
+    //Uncomment to calculate ODR
+    /*float odr = computeODR(now);
     if (odr > 0) {
-      char buf[32];
-      snprintf(buf, sizeof(buf), "📈 ODR: %.2f Hz\n", odr);
-      Serial.print(buf);
-    }
-  }
-}
-
-void sendI2CData() {
-  const uint8_t* ptr = (const uint8_t*)buffer;
-  size_t total = sizeof(buffer);
-
-  while (total > 0) {
-    size_t chunkSize = min(total, 32);  // Conservative 32-byte chunks
-    Wire.write(ptr, chunkSize);
-    ptr += chunkSize;
-    total -= chunkSize;
+      Serial.print("📉 ODR: ");
+      Serial.println(odr);
+    }*/
   }
 }

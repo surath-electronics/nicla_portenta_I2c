@@ -6,7 +6,7 @@ from pymongo import MongoClient
 import paho.mqtt.client as mqtt
 
 # ——— CONFIGURATION ———
-MQTT_BROKER   = "broker.hivemq.com"
+MQTT_BROKER   = "192.168.0.212"
 MQTT_PORT     = 1883
 MQTT_TOPIC    = "nicla/data"
 
@@ -16,29 +16,29 @@ MONGO_COLL    = "portenta_stream"
 BATCH_SIZE    = 1000
 # ———————————
 
-# Setup
+# Setup MongoDB client and insert queue
 mongo = MongoClient(MONGO_URI)
 collection = mongo[MONGO_DB][MONGO_COLL]
 insert_queue = Queue()
 
-# Background worker thread for batch insert
+# Background worker thread for MongoDB batch inserts
 def mongo_worker():
     batch = []
     while True:
         doc = insert_queue.get()
         if doc is None:
-            break  # Sentinel to shut down thread
+            break  # Graceful shutdown
         batch.append(doc)
 
         if len(batch) >= BATCH_SIZE:
             try:
                 collection.insert_many(batch)
-                print(f"📥 Inserted batch of {BATCH_SIZE}, last seq: {batch[-1].get('seq')}")
+                print(f"📥 Inserted batch of {BATCH_SIZE}, last timestamp: {batch[-1].get('timestamp')}")
             except Exception as e:
                 print("❌ Insert failed:", e)
             batch.clear()
 
-# Start worker thread
+# Start the MongoDB insert worker thread
 threading.Thread(target=mongo_worker, daemon=True).start()
 
 # MQTT Callbacks
@@ -48,13 +48,20 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     try:
-        doc = json.loads(msg.payload.decode())
-        doc["ts"] = time.time()
-        insert_queue.put(doc)  # 🚀 Fast non-blocking enqueue
+        samples = json.loads(msg.payload.decode())
+        now = time.time()
+
+        if isinstance(samples, list):
+            for doc in samples:
+                doc["ts"] = now  # Add arrival timestamp
+                insert_queue.put(doc)
+        else:
+            print("⚠️ Expected JSON array, got:", type(samples))
+
     except Exception as e:
         print("❌ Error parsing MQTT message:", e)
 
-# MQTT Setup
+# Setup MQTT client
 mqttc = mqtt.Client()
 mqttc.on_connect = on_connect
 mqttc.on_message = on_message

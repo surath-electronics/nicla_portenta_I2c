@@ -17,13 +17,13 @@ const char* ssid = "IoT_EAA8";
 const char* password = "26815718";
 
 // MQTT broker
-const char* mqtt_server = "broker.hivemq.com";
+const char* mqtt_server = "192.168.0.212";
 const int mqtt_port = 1883;
 const char* mqtt_topic = "nicla/data";
 
 // Struct must match Nicla side
 struct SensorData {
-  uint32_t seq;
+  uint32_t timestamp;
   int16_t ax, ay, az;
   int16_t gx, gy, gz;
   float temp, baro, hum;
@@ -94,7 +94,7 @@ void setup() {
 }
 
 void loop() {
-  static uint32_t lastSeq = 0;
+  static uint32_t lastTimestamp = 0;
   static int newSamples = 0;
 
   if (!mqttClient.connected()) {
@@ -113,55 +113,62 @@ void loop() {
   Wire.readBytes((char*)buffer, expectedBytes);
   newSamples = 0;
 
+  char payload[1024];
+  strcpy(payload, "[");  // Start JSON array
+
+  bool first = true;
+
   for (int i = 0; i < BUFFER_SIZE; i++) {
     SensorData& s = buffer[i];
 
-    if (s.seq <= lastSeq) continue;
+    if (s.timestamp <= lastTimestamp) continue;
 
-    int32_t delta = (int32_t)s.seq - (int32_t)lastSeq;
-    lastSeq = s.seq;
+    int32_t delta = (int32_t)s.timestamp - (int32_t)lastTimestamp;
+
+    lastTimestamp = s.timestamp;
     newSamples++;
 
+    if (!first) strcat(payload, ",");
+    first = false;
+
     // Format as JSON
-    String payload = "{";
-    payload += "\"seq\":" + String(s.seq) + ",";
-    payload += "\"ax\":" + String(s.ax) + ",";
-    payload += "\"ay\":" + String(s.ay) + ",";
-    payload += "\"az\":" + String(s.az) + ",";
-    payload += "\"gx\":" + String(s.gx) + ",";
-    payload += "\"gy\":" + String(s.gy) + ",";
-    payload += "\"gz\":" + String(s.gz) + ",";
-    payload += "\"temp\":" + String(s.temp, 2) + ",";
-    payload += "\"baro\":" + String(s.baro, 2) + ",";
-    payload += "\"hum\":" + String(s.hum, 2);
-    payload += "}";
+    char entry[128];
+    snprintf(entry, sizeof(entry),
+      "{\"timestamp\":%lu,\"ax\":%d,\"ay\":%d,\"az\":%d,"
+      "\"gx\":%d,\"gy\":%d,\"gz\":%d,\"temp\":%.2f,"
+      "\"baro\":%.2f,\"hum\":%.2f}",
+      s.timestamp, s.ax, s.ay, s.az,
+      s.gx, s.gy, s.gz, s.temp,
+      s.baro, s.hum);
 
-    // MQTT publish with LED feedback
-    if (mqttClient.publish(mqtt_topic, payload.c_str())) {
-      lastPublishTime = millis();  // Update last successful publish time
-    }
+    strcat(payload, entry);
+  }
+  strcat(payload, "]");  // Close JSON array
 
-    // MQTT publish with printing of data
-    /*if (mqttClient.publish(mqtt_topic, payload.c_str())) {
-      Serial.print("📤 Published: ");
-      Serial.println(payload);
-    } else {
-      Serial.println("❌ MQTT publish failed");
-    }*/
+  // MQTT publish with LED feedback
+  if (mqttClient.publish(mqtt_topic, payload)) {
+    lastPublishTime = millis();  // Update last successful publish time
   }
 
-  // Show ODR once per batch
-  /*if (newSamples > 0) {
-    uint32_t now = micros();
-    for (int i = 0; i < newSamples; i++) {
-      float odr = computeODR(now);
-      if (odr > 0) {
-        Serial.print("📈 ODR: ");
-        Serial.print(odr, 2);
-        Serial.println(" Hz");
-      }
+  static uint32_t firstTimestamp = 0;
+  static int sampleCount = 0;
+
+  if (newSamples > 0) {
+    if (sampleCount == 0) {
+      firstTimestamp = lastTimestamp;
     }
-  }*/
+
+    sampleCount += newSamples;
+
+    if (sampleCount >= 100) {
+      uint32_t deltaTime = lastTimestamp - firstTimestamp;  // in microseconds
+      float odr = 1000000.0f * (sampleCount - 1) / deltaTime;
+      Serial.print("📈 Averaged ODR over 100 samples: ");
+      Serial.print(odr, 2);
+      Serial.println(" Hz");
+      sampleCount = 0;
+    }
+  }
 
   // Blink LED_BUILTIN every 200 ms as long as we're publishing
   // ---------------- Blinking LED for feedback ----------------
