@@ -1,0 +1,13 @@
+# macOS Finder files
+.DS_Store
+**/.DS_Store
+
+# Arduino backups
+*.ino.bak
+*.dmp
+*.elf
+*.hex
+
+# VS Code settings
+.vscode/.DS_Store
+**/.DS_Store
