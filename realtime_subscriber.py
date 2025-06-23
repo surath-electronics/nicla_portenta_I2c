@@ -16,6 +16,16 @@ MONGO_COLL    = "portenta_stream"
 BATCH_SIZE    = 1000
 # ———————————
 
+# NDJSON writer
+def write_to_ndjson(doc):
+    try:
+        doc = dict(doc)  # Ensure it's a regular dict (not a pymongo object)
+        doc.pop('_id', None)  # Remove MongoDB ObjectId if it exists
+        with open("data.ndjson", "a") as f:
+            f.write(json.dumps(doc) + "\n")
+    except Exception as e:
+        print("❌ Failed to write to NDJSON:", e)
+
 # Setup MongoDB client and insert queue
 mongo = MongoClient(MONGO_URI)
 collection = mongo[MONGO_DB][MONGO_COLL]
@@ -55,6 +65,7 @@ def on_message(client, userdata, msg):
             for doc in samples:
                 doc["ts"] = now  # Add arrival timestamp
                 insert_queue.put(doc)
+                write_to_ndjson(doc)  # Save locally
         else:
             print("⚠️ Expected JSON array, got:", type(samples))
 
