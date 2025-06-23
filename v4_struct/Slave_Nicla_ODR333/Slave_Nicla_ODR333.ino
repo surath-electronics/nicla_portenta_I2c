@@ -108,8 +108,8 @@ void loop() {
 
     writeIndex = (writeIndex + 1) % BUFFER_SIZE;
 
-    /* Debug print
-    Serial.print("Timestamp: ");
+    // Debug print
+    /*Serial.print("Timestamp: ");
     Serial.print(s.timestamp);
     Serial.print(" µs | ");
 

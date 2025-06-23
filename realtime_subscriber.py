@@ -6,7 +6,7 @@ from pymongo import MongoClient
 import paho.mqtt.client as mqtt
 
 # ——— CONFIGURATION ———
-MQTT_BROKER   = "192.168.0.212"
+MQTT_BROKER   = "broker.hivemq.com"
 MQTT_PORT     = 1883
 MQTT_TOPIC    = "nicla/data"
 

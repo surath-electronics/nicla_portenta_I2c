@@ -17,7 +17,7 @@ const char* ssid = "IoT_EAA8";
 const char* password = "26815718";
 
 // MQTT broker
-const char* mqtt_server = "192.168.0.212";
+const char* mqtt_server = "broker.hivemq.com";
 const int mqtt_port = 1883;
 const char* mqtt_topic = "nicla/data";
 
@@ -36,7 +36,7 @@ PubSubClient mqttClient(wifiClient);
 
 // ---------------- ODR Calculation ----------------
 float computeODR(uint32_t currentTimeMicros) {
-  const int sampleWindow = 100;
+  const int sampleWindow = 500;
   static uint32_t firstTimestamp = 0;
   static int sampleCount = 0;
 
@@ -160,10 +160,10 @@ void loop() {
 
     sampleCount += newSamples;
 
-    if (sampleCount >= 100) {
+    if (sampleCount >= 500) { //change to change the sample windows
       uint32_t deltaTime = lastTimestamp - firstTimestamp;  // in microseconds
       float odr = 1000000.0f * (sampleCount - 1) / deltaTime;
-      Serial.print("📈 Averaged ODR over 100 samples: ");
+      Serial.print("📈 Averaged ODR over 500 samples: ");
       Serial.print(odr, 2);
       Serial.println(" Hz");
       sampleCount = 0;
